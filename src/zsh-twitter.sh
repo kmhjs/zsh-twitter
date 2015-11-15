@@ -305,9 +305,9 @@ function twitter_get_home_timeline() {
     }
 
     local -A oauth_info=($(cat $(zsh_twitter_oauth_info_path) | tr ',\n' '  '))
-    oauth2_get_home_timeline ${oauth_info[consumer_key]} \
-                             ${oauth_info[consumer_secret]} \
-                             ${oauth_info[oauth_token]} \
+    oauth2_get_home_timeline ${oauth_info[consumer_key]}       \
+                             ${oauth_info[consumer_secret]}    \
+                             ${oauth_info[oauth_token]}        \
                              ${oauth_info[oauth_token_secret]} \
                              ${number_of_items}
 }
@@ -319,9 +319,9 @@ function twitter_post_timeline_update() {
     post_string=${1}
 
     local -A oauth_info=($(cat $(zsh_twitter_oauth_info_path) | tr ',\n' '  '))
-    oauth2_post_timeline_update ${oauth_info[consumer_key]} \
-                                ${oauth_info[consumer_secret]} \
-                                ${oauth_info[oauth_token]} \
+    oauth2_post_timeline_update ${oauth_info[consumer_key]}       \
+                                ${oauth_info[consumer_secret]}    \
+                                ${oauth_info[oauth_token]}        \
                                 ${oauth_info[oauth_token_secret]} \
                                 ${post_string}
 }
