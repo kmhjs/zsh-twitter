@@ -56,6 +56,21 @@ function oauth2_generate_signature() {
     echo -n ${signature_base_string} | openssl dgst -sha1 -binary -hmac ${signing_key} | base64
 }
 
+# oauth2_api_url: target method -> api endpoint url
+function oauth2_api_url() {
+    local target_method=${1}
+    local base_url='https://api.twitter.com'
+
+    local -A api_urls
+    api_urls[request_token]='/oauth/request_token'
+    api_urls[access_token]='/oauth/access_token'
+    api_urls[home_timeline.json]='/1.1/statuses/home_timeline.json'
+    api_urls[user_timeline.json]='/1.1/statuses/user_timeline.json'
+    api_urls[update.json]='/1.1/statuses/update.json'
+
+    echo -n "${base_url}${api_urls[$target_method]}"
+}
+
 # oauth2_generate_base_dict: consumer_key -> dictionary expanded by ${(kv)dict}
 function oauth2_generate_base_dict() {
     local consumer_key=${1}
@@ -76,7 +91,7 @@ function oauth2_post_request_token() {
     local consumer_secret=${2}
 
     local -A oauth_dict=($(oauth2_generate_base_dict ${consumer_key}))
-    local request_api_url='https://api.twitter.com/oauth/request_token'
+    local request_api_url=$(oauth2_api_url 'request_token')
     local request_api_http_method='POST'
 
     oauth_dict[oauth_callback]='oob'
@@ -114,7 +129,7 @@ function oauth2_post_access_token() {
     local oauth_pin_code=${5}
 
     local -A oauth_dict=($(oauth2_generate_base_dict ${consumer_key}))
-    local request_api_url='https://api.twitter.com/oauth/access_token'
+    local request_api_url=$(oauth2_api_url 'access_token')
     local request_api_http_method='POST'
 
     oauth_dict[oauth_token]=${oauth_token}
@@ -172,7 +187,7 @@ function oauth2_get_home_timeline() {
     local number_of_items=${5}
 
     local -A oauth_dict=($(oauth2_generate_base_dict ${consumer_key}))
-    local request_api_url='https://api.twitter.com/1.1/statuses/home_timeline.json'
+    local request_api_url=$(oauth2_api_url 'home_timeline.json')
     local request_api_http_method='GET'
 
     oauth_dict[oauth_token]=${oauth_token}
@@ -212,7 +227,7 @@ function oauth2_get_user_timeline() {
     local oauth_token_secret=${4}
 
     local -A oauth_dict=($(oauth2_generate_base_dict ${consumer_key}))
-    local request_api_url='https://api.twitter.com/1.1/statuses/user_timeline.json'
+    local request_api_url=$(oauth2_api_url 'user_timeline.json')
     local request_api_http_method='GET'
 
     oauth_dict[oauth_token]=${oauth_token}
@@ -245,7 +260,7 @@ function oauth2_post_timeline_update() {
     local status_string=$(oauth2_url_encode ${5})
 
     local -A oauth_dict=($(oauth2_generate_base_dict ${consumer_key}))
-    local request_api_url='https://api.twitter.com/1.1/statuses/update.json'
+    local request_api_url=$(oauth2_api_url 'update.json')
     local request_api_http_method='POST'
 
     oauth_dict[oauth_token]=${oauth_token}
