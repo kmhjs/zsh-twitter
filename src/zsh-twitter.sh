@@ -180,6 +180,19 @@ function oauth2_obtain_oauth_token() {
 
 # oauth2_get_home_timeline: consumer key, consumer secret, oauth token, oauth token secret, number of items -> (show) home time line
 function oauth2_get_home_timeline() {
+    # oauth2_get_home_timeline_pretty_display: result json string -> pretty print
+    function oauth2_get_home_timeline_pretty_display() {
+        echo ${*}                                            | \
+            lc_ctype=c tr '{' '\n'                           | \
+            egrep '(^"created_at|name)'                      | \
+            lc_ctype=c tr ',' '\n'                           | \
+            egrep '^"(name|text|created_at|screen_name)'     | \
+            lc_ctype=c sed 's/^"//;s/":"/    ->    /;s/"$//' | \
+            lc_ctype=c sed 's/^[tns].*$/    | &/g'           | \
+            lc_ctype=c sed 's/^created_at/$-----$$&/g'       | \
+            lc_ctype=c tr '$' '\n' | less
+    }
+
     local consumer_key=${1}
     local consumer_secret=${2}
     local oauth_token=${3}
@@ -208,15 +221,7 @@ function oauth2_get_home_timeline() {
     local result_json=$(echo -e $(curl --silent "${request_api_url}?count=${number_of_items}" \
                                   -X ${request_api_http_method} -H "Authorization: ${oauth_authorization_header}"))
 
-    echo ${result_json}                                  | \
-        LC_CTYPE=C tr '{' '\n'                           | \
-        egrep '(^"created_at|name)'                      | \
-        LC_CTYPE=C tr ',' '\n'                           | \
-        egrep '^"(name|text|created_at|screen_name)'     | \
-        LC_CTYPE=C sed 's/^"//;s/":"/    ->    /;s/"$//' | \
-        LC_CTYPE=C sed 's/^[tns].*$/    | &/g'           | \
-        LC_CTYPE=C sed 's/^created_at/$-----$$&/g'       | \
-        LC_CTYPE=C tr '$' '\n' | less
+    oauth2_get_home_timeline_pretty_display ${result_json}
 }
 
 # oauth2_get_user_timeline: consumer key, consumer secret, oauth token, oauth token secret -> (show) user time line
