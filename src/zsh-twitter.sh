@@ -56,6 +56,21 @@ function oauth2_generate_signature() {
     echo -n ${signature_base_string} | openssl dgst -sha1 -binary -hmac ${signing_key} | base64
 }
 
+# oauth2_api_url: target method -> api endpoint url
+function oauth2_api_url() {
+    local target_method=${1}
+    local base_url='https://api.twitter.com'
+
+    local -A api_urls
+    api_urls[request_token]='/oauth/request_token'
+    api_urls[access_token]='/oauth/access_token'
+    api_urls[home_timeline.json]='/1.1/statuses/home_timeline.json'
+    api_urls[user_timeline.json]='/1.1/statuses/user_timeline.json'
+    api_urls[update.json]='/1.1/statuses/update.json'
+
+    echo -n "${base_url}${api_urls[$target_method]}"
+}
+
 # oauth2_generate_base_dict: consumer_key -> dictionary expanded by ${(kv)dict}
 function oauth2_generate_base_dict() {
     local consumer_key=${1}
@@ -76,21 +91,32 @@ function oauth2_post_request_token() {
     local consumer_secret=${2}
 
     local -A oauth_dict=($(oauth2_generate_base_dict ${consumer_key}))
-    local request_api_url='https://api.twitter.com/oauth/request_token'
+    local request_api_url=$(oauth2_api_url 'request_token')
     local request_api_http_method='POST'
 
     oauth_dict[oauth_callback]='oob'
 
     local concat_param_str=$(oauth2_generate_oauth_concat_param_str ${(kv)oauth_dict})
 
-    local signature_base_string="${request_api_http_method}&$(oauth2_url_encode ${request_api_url})&$(oauth2_url_encode ${concat_param_str})"
+    local signature_base_string=''
+    signature_base_string+="${request_api_http_method}&"
+    signature_base_string+="$(oauth2_url_encode ${request_api_url})&"
+    signature_base_string+="$(oauth2_url_encode ${concat_param_str})"
+
     local signing_key="$(oauth2_url_encode ${consumer_secret})&"
     oauth_dict[oauth_signature]=$(oauth2_generate_signature "${signature_base_string}" "${signing_key}")
 
     local oauth_authorization_header=$(oauth2_generate_authorization_header ${(kv)oauth_dict})
 
-    local -A oauth_response=($(curl --silent ${request_api_url} -X POST -H "Authorization: ${oauth_authorization_header}" | tr '&=' '  '))
-    echo "oauth_token ${oauth_response[oauth_token]} oauth_token_secret ${oauth_response[oauth_token_secret]}"
+    local -A oauth_response=($(curl --silent ${request_api_url} \
+                               -X POST -H "Authorization: ${oauth_authorization_header}" | \
+                               tr '&=' '  '))
+
+    local result_message=''
+    result_message+="oauth_token ${oauth_response[oauth_token]}"
+    result_message+=" oauth_token_secret ${oauth_response[oauth_token_secret]}"
+    echo ${result_message}
+
     open "https://api.twitter.com/oauth/authenticate?oauth_token=${oauth_response[oauth_token]}"
 }
 
@@ -103,7 +129,7 @@ function oauth2_post_access_token() {
     local oauth_pin_code=${5}
 
     local -A oauth_dict=($(oauth2_generate_base_dict ${consumer_key}))
-    local request_api_url='https://api.twitter.com/oauth/access_token'
+    local request_api_url=$(oauth2_api_url 'access_token')
     local request_api_http_method='POST'
 
     oauth_dict[oauth_token]=${oauth_token}
@@ -111,14 +137,26 @@ function oauth2_post_access_token() {
 
     local concat_param_str=$(oauth2_generate_oauth_concat_param_str ${(kv)oauth_dict})
 
-    local signature_base_string="${request_api_http_method}&$(oauth2_url_encode ${request_api_url})&$(oauth2_url_encode ${concat_param_str})"
+    local signature_base_string=''
+    signature_base_string+="${request_api_http_method}&"
+    signature_base_string+="$(oauth2_url_encode ${request_api_url})&"
+    signature_base_string+="$(oauth2_url_encode ${concat_param_str})"
+
     local signing_key="$(oauth2_url_encode ${consumer_secret})&$(oauth2_url_encode ${oauth_token_secret})"
     oauth_dict[oauth_signature]=$(oauth2_generate_signature "${signature_base_string}" "${signing_key}")
 
     local oauth_authorization_header=$(oauth2_generate_authorization_header ${(kv)oauth_dict})
 
-    local -A oauth_response=($(curl --silent ${request_api_url} -X POST -H "Authorization: ${oauth_authorization_header}" | tr '&=' '  '))
-    echo "oauth_token ${oauth_response[oauth_token]} oauth_token_secret ${oauth_response[oauth_token_secret]} user_id ${oauth_response[user_id]} screen_name ${oauth_response[screen_name]}"
+    local -A oauth_response=($(curl --silent ${request_api_url} \
+                               -X POST -H "Authorization: ${oauth_authorization_header}" | \
+                               tr '&=' '  '))
+
+    local result_message=''
+    result_message+="oauth_token ${oauth_response[oauth_token]}"
+    result_message+=" oauth_token_secret ${oauth_response[oauth_token_secret]}"
+    result_message+=" user_id ${oauth_response[user_id]}"
+    result_message+=" screen_name ${oauth_response[screen_name]}"
+    echo ${result_message}
 }
 
 # oauth2_obtain_oauth_token: consumer key, consumer secret -> (write out) configuration information
@@ -142,6 +180,19 @@ function oauth2_obtain_oauth_token() {
 
 # oauth2_get_home_timeline: consumer key, consumer secret, oauth token, oauth token secret, number of items -> (show) home time line
 function oauth2_get_home_timeline() {
+    # oauth2_get_home_timeline_pretty_display: result json string -> pretty print
+    function oauth2_get_home_timeline_pretty_display() {
+        echo ${*}                                            | \
+            lc_ctype=c tr '{' '\n'                           | \
+            egrep '(^"created_at|name)'                      | \
+            lc_ctype=c tr ',' '\n'                           | \
+            egrep '^"(name|text|created_at|screen_name)'     | \
+            lc_ctype=c sed 's/^"//;s/":"/    ->    /;s/"$//' | \
+            lc_ctype=c sed 's/^[tns].*$/    | &/g'           | \
+            lc_ctype=c sed 's/^created_at/$-----$$&/g'       | \
+            lc_ctype=c tr '$' '\n' | less
+    }
+
     local consumer_key=${1}
     local consumer_secret=${2}
     local oauth_token=${3}
@@ -149,7 +200,7 @@ function oauth2_get_home_timeline() {
     local number_of_items=${5}
 
     local -A oauth_dict=($(oauth2_generate_base_dict ${consumer_key}))
-    local request_api_url='https://api.twitter.com/1.1/statuses/home_timeline.json'
+    local request_api_url=$(oauth2_api_url 'home_timeline.json')
     local request_api_http_method='GET'
 
     oauth_dict[oauth_token]=${oauth_token}
@@ -157,15 +208,20 @@ function oauth2_get_home_timeline() {
 
     local concat_param_str=$(oauth2_generate_oauth_concat_param_str ${(kv)oauth_dict})
 
-    local signature_base_string="${request_api_http_method}&$(oauth2_url_encode ${request_api_url})&$(oauth2_url_encode ${concat_param_str})"
+    local signature_base_string=''
+    signature_base_string+="${request_api_http_method}&"
+    signature_base_string+="$(oauth2_url_encode ${request_api_url})&"
+    signature_base_string+="$(oauth2_url_encode ${concat_param_str})"
+
     local signing_key="$(oauth2_url_encode ${consumer_secret})&$(oauth2_url_encode ${oauth_token_secret})"
     oauth_dict[oauth_signature]=$(oauth2_generate_signature "${signature_base_string}" "${signing_key}")
 
     local oauth_authorization_header=$(oauth2_generate_authorization_header ${(kv)oauth_dict})
 
-    local result_json=$(echo -e $(curl --silent "${request_api_url}?count=${number_of_items}" -X ${request_api_http_method} -H "Authorization: ${oauth_authorization_header}"))
+    local result_json=$(echo -e $(curl --silent "${request_api_url}?count=${number_of_items}" \
+                                  -X ${request_api_http_method} -H "Authorization: ${oauth_authorization_header}"))
 
-    echo ${result_json} | LC_CTYPE=C tr '{' '\n' | egrep '(^"created_at|name)' | LC_CTYPE=C tr ',' '\n' | egrep '^"(name|text|created_at|screen_name)' | LC_CTYPE=C sed 's/^"//;s/":"/    ->    /;s/"$//' | LC_CTYPE=C sed 's/^[tns].*$/    | &/g' | LC_CTYPE=C sed 's/^created_at/$-----$$&/g' | LC_CTYPE=C tr '$' '\n' | less
+    oauth2_get_home_timeline_pretty_display ${result_json}
 }
 
 # oauth2_get_user_timeline: consumer key, consumer secret, oauth token, oauth token secret -> (show) user time line
@@ -176,7 +232,7 @@ function oauth2_get_user_timeline() {
     local oauth_token_secret=${4}
 
     local -A oauth_dict=($(oauth2_generate_base_dict ${consumer_key}))
-    local request_api_url='https://api.twitter.com/1.1/statuses/user_timeline.json'
+    local request_api_url=$(oauth2_api_url 'user_timeline.json')
     local request_api_http_method='GET'
 
     oauth_dict[oauth_token]=${oauth_token}
@@ -184,13 +240,18 @@ function oauth2_get_user_timeline() {
 
     local concat_param_str=$(oauth2_generate_oauth_concat_param_str ${(kv)oauth_dict})
 
-    local signature_base_string="${request_api_http_method}&$(oauth2_url_encode ${request_api_url})&$(oauth2_url_encode ${concat_param_str})"
+    local signature_base_string=''
+    signature_base_string+="${request_api_http_method}&"
+    signature_base_string+="$(oauth2_url_encode ${request_api_url})&"
+    signature_base_string+="$(oauth2_url_encode ${concat_param_str})"
+
     local signing_key="$(oauth2_url_encode ${consumer_secret})&$(oauth2_url_encode ${oauth_token_secret})"
     oauth_dict[oauth_signature]=$(oauth2_generate_signature "${signature_base_string}" "${signing_key}")
 
     local oauth_authorization_header=$(oauth2_generate_authorization_header ${(kv)oauth_dict})
 
-    local result_json=$(curl --silent "${request_api_url}?count=5" -X ${request_api_http_method} -H "Authorization: ${oauth_authorization_header}")
+    local result_json=$(curl --silent "${request_api_url}?count=5" \
+                        -X ${request_api_http_method} -H "Authorization: ${oauth_authorization_header}")
     echo ${result_json}
 }
 
@@ -204,7 +265,7 @@ function oauth2_post_timeline_update() {
     local status_string=$(oauth2_url_encode ${5})
 
     local -A oauth_dict=($(oauth2_generate_base_dict ${consumer_key}))
-    local request_api_url='https://api.twitter.com/1.1/statuses/update.json'
+    local request_api_url=$(oauth2_api_url 'update.json')
     local request_api_http_method='POST'
 
     oauth_dict[oauth_token]=${oauth_token}
@@ -212,13 +273,18 @@ function oauth2_post_timeline_update() {
 
     local concat_param_str=$(oauth2_generate_oauth_concat_param_str ${(kv)oauth_dict})
 
-    local signature_base_string="${request_api_http_method}&$(oauth2_url_encode ${request_api_url})&$(oauth2_url_encode ${concat_param_str})"
+    local signature_base_string=''
+    signature_base_string+="${request_api_http_method}&"
+    signature_base_string+="$(oauth2_url_encode ${request_api_url})&"
+    signature_base_string+="$(oauth2_url_encode ${concat_param_str})"
+
     local signing_key="$(oauth2_url_encode ${consumer_secret})&$(oauth2_url_encode ${oauth_token_secret})"
     oauth_dict[oauth_signature]=$(oauth2_generate_signature "${signature_base_string}" "${signing_key}")
 
     local oauth_authorization_header=$(oauth2_generate_authorization_header ${(kv)oauth_dict})
 
-    local result_json=$(curl --silent "${request_api_url}?status=${status_string}" -X ${request_api_http_method} -H "Authorization: ${oauth_authorization_header}")
+    local result_json=$(curl --silent "${request_api_url}?status=${status_string}" \
+        -X ${request_api_http_method} -H "Authorization: ${oauth_authorization_header}")
 }
 
 # twitter_authenticate: -> (write out) configuration
@@ -239,9 +305,9 @@ function twitter_get_home_timeline() {
     }
 
     local -A oauth_info=($(cat $(zsh_twitter_oauth_info_path) | tr ',\n' '  '))
-    oauth2_get_home_timeline ${oauth_info[consumer_key]} \
-                             ${oauth_info[consumer_secret]} \
-                             ${oauth_info[oauth_token]} \
+    oauth2_get_home_timeline ${oauth_info[consumer_key]}       \
+                             ${oauth_info[consumer_secret]}    \
+                             ${oauth_info[oauth_token]}        \
                              ${oauth_info[oauth_token_secret]} \
                              ${number_of_items}
 }
@@ -253,9 +319,9 @@ function twitter_post_timeline_update() {
     post_string=${1}
 
     local -A oauth_info=($(cat $(zsh_twitter_oauth_info_path) | tr ',\n' '  '))
-    oauth2_post_timeline_update ${oauth_info[consumer_key]} \
-                                ${oauth_info[consumer_secret]} \
-                                ${oauth_info[oauth_token]} \
+    oauth2_post_timeline_update ${oauth_info[consumer_key]}       \
+                                ${oauth_info[consumer_secret]}    \
+                                ${oauth_info[oauth_token]}        \
                                 ${oauth_info[oauth_token_secret]} \
                                 ${post_string}
 }
